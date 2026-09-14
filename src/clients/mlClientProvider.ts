@@ -9,14 +9,15 @@
 
 import { mlApiClient } from "./mlApiClient";
 import { mockMlApiClient } from "./mockMlApiClient";
+import { env } from "../config/env";
+import { logger } from "../utils/logger";
 
-const useMock = (process.env.USE_MOCK_ML ?? "true").toLowerCase() === "true";
+const useMock = env.useMockMl;
 
 export const mlClient = useMock ? mockMlApiClient : mlApiClient;
 
 if (useMock) {
-  // eslint-disable-next-line no-console
-  console.warn(
+  logger.warn(
     "[mlClientProvider] Using MOCK ML client. Set USE_MOCK_ML=false once the ML team's API is ready."
   );
 }

@@ -1,4 +1,6 @@
 import { db } from "./database";
+import { sessions, telemetrySnapshots, sessionMetrics } from "./schema";
+import { eq, desc, inArray } from "drizzle-orm";
 import { PerformanceMetrics, Session, SessionStatus, Telemetry } from "../types/domain";
 
 export function createSession(
@@ -7,118 +9,125 @@ export function createSession(
   schedulerName: string,
   seed: number
 ): void {
-  db.prepare(
-    `INSERT INTO sessions (session_id, scenario_name, scheduler_name, seed, status, created_at)
-     VALUES (?, ?, ?, ?, ?, ?)`
-  ).run(sessionId, scenarioName, schedulerName, seed, "idle", new Date().toISOString());
+  db.insert(sessions).values({
+    sessionId,
+    scenarioName,
+    schedulerName,
+    seed,
+    status: "idle",
+    createdAt: new Date().toISOString(),
+  }).run();
 }
 
 export function updateSessionStatus(sessionId: string, status: SessionStatus): void {
-  const completedAt = status === "completed" ? new Date().toISOString() : null;
-  db.prepare(
-    `UPDATE sessions SET status = ?, completed_at = COALESCE(?, completed_at) WHERE session_id = ?`
-  ).run(status, completedAt, sessionId);
+  const completedAt = status === "completed" ? new Date().toISOString() : undefined;
+  
+  const updateData: any = { status };
+  if (completedAt) {
+    updateData.completedAt = completedAt;
+  }
+  
+  db.update(sessions)
+    .set(updateData)
+    .where(eq(sessions.sessionId, sessionId))
+    .run();
 }
 
 export function getSession(sessionId: string): Session | undefined {
-  const row = db.prepare(`SELECT * FROM sessions WHERE session_id = ?`).get(sessionId) as
-    | {
-        session_id: string;
-        scenario_name: string;
-        scheduler_name: string;
-        seed: number;
-        status: SessionStatus;
-        created_at: string;
-        completed_at: string | null;
-      }
-    | undefined;
+  const row = db.select().from(sessions).where(eq(sessions.sessionId, sessionId)).get();
   if (!row) return undefined;
   return {
-    sessionId: row.session_id,
-    scenarioName: row.scenario_name,
-    schedulerName: row.scheduler_name,
+    sessionId: row.sessionId,
+    scenarioName: row.scenarioName,
+    schedulerName: row.schedulerName,
     seed: row.seed,
     status: row.status,
-    createdAt: row.created_at,
-    completedAt: row.completed_at ?? undefined,
+    createdAt: row.createdAt,
+    completedAt: row.completedAt ?? undefined,
   };
 }
 
 export function listSessions(): Session[] {
-  const rows = db.prepare(`SELECT * FROM sessions ORDER BY created_at DESC`).all() as Array<{
-    session_id: string;
-    scenario_name: string;
-    scheduler_name: string;
-    seed: number;
-    status: SessionStatus;
-    created_at: string;
-    completed_at: string | null;
-  }>;
+  const rows = db.select().from(sessions).orderBy(desc(sessions.createdAt)).all();
   return rows.map((row) => ({
-    sessionId: row.session_id,
-    scenarioName: row.scenario_name,
-    schedulerName: row.scheduler_name,
+    sessionId: row.sessionId,
+    scenarioName: row.scenarioName,
+    schedulerName: row.schedulerName,
     seed: row.seed,
     status: row.status,
-    createdAt: row.created_at,
-    completedAt: row.completed_at ?? undefined,
+    createdAt: row.createdAt,
+    completedAt: row.completedAt ?? undefined,
   }));
 }
 
-/** Get the currently "active" session, if any - the one we're actively driving/watching. */
 export function getActiveSession(): Session | undefined {
-  const row = db
-    .prepare(`SELECT * FROM sessions WHERE status IN ('running', 'paused') ORDER BY created_at DESC LIMIT 1`)
-    .get() as
-    | {
-        session_id: string;
-        scenario_name: string;
-        scheduler_name: string;
-        seed: number;
-        status: SessionStatus;
-        created_at: string;
-        completed_at: string | null;
-      }
-    | undefined;
+  const row = db.select()
+    .from(sessions)
+    .where(inArray(sessions.status, ["running", "paused"]))
+    .orderBy(desc(sessions.createdAt))
+    .limit(1)
+    .get();
+    
   if (!row) return undefined;
   return {
-    sessionId: row.session_id,
-    scenarioName: row.scenario_name,
-    schedulerName: row.scheduler_name,
+    sessionId: row.sessionId,
+    scenarioName: row.scenarioName,
+    schedulerName: row.schedulerName,
     seed: row.seed,
     status: row.status,
-    createdAt: row.created_at,
-    completedAt: row.completed_at ?? undefined,
+    createdAt: row.createdAt,
+    completedAt: row.completedAt ?? undefined,
   };
 }
 
 export function insertTelemetrySnapshot(sessionId: string, step: number, telemetry: Telemetry): void {
-  db.prepare(
-    `INSERT OR REPLACE INTO telemetry_snapshots (session_id, step, captured_at, telemetry_json)
-     VALUES (?, ?, ?, ?)`
-  ).run(sessionId, step, new Date().toISOString(), JSON.stringify(telemetry));
+  db.insert(telemetrySnapshots).values({
+    sessionId,
+    step,
+    capturedAt: new Date().toISOString(),
+    telemetryJson: JSON.stringify(telemetry),
+  }).onConflictDoUpdate({
+    target: [telemetrySnapshots.sessionId, telemetrySnapshots.step],
+    set: {
+      capturedAt: new Date().toISOString(),
+      telemetryJson: JSON.stringify(telemetry),
+    }
+  }).run();
 }
 
 export function getTelemetryHistory(sessionId: string, limit = 500): Telemetry[] {
-  const rows = db
-    .prepare(
-      `SELECT telemetry_json FROM telemetry_snapshots WHERE session_id = ? ORDER BY step DESC LIMIT ?`
-    )
-    .all(sessionId, limit) as Array<{ telemetry_json: string }>;
-  return rows.map((r) => JSON.parse(r.telemetry_json)).reverse();
+  const rows = db.select()
+    .from(telemetrySnapshots)
+    .where(eq(telemetrySnapshots.sessionId, sessionId))
+    .orderBy(desc(telemetrySnapshots.step))
+    .limit(limit)
+    .all();
+    
+  return rows.map((r) => JSON.parse(r.telemetryJson)).reverse();
 }
 
 export function upsertSessionMetrics(sessionId: string, performance: PerformanceMetrics): void {
-  db.prepare(
-    `INSERT INTO session_metrics (session_id, performance_json, updated_at)
-     VALUES (?, ?, ?)
-     ON CONFLICT(session_id) DO UPDATE SET performance_json = excluded.performance_json, updated_at = excluded.updated_at`
-  ).run(sessionId, JSON.stringify(performance), new Date().toISOString());
+  const performanceJson = JSON.stringify(performance);
+  const updatedAt = new Date().toISOString();
+  
+  db.insert(sessionMetrics).values({
+    sessionId,
+    performanceJson,
+    updatedAt,
+  }).onConflictDoUpdate({
+    target: sessionMetrics.sessionId,
+    set: {
+      performanceJson,
+      updatedAt,
+    }
+  }).run();
 }
 
 export function getSessionMetrics(sessionId: string): PerformanceMetrics | undefined {
-  const row = db.prepare(`SELECT performance_json FROM session_metrics WHERE session_id = ?`).get(
-    sessionId
-  ) as { performance_json: string } | undefined;
-  return row ? JSON.parse(row.performance_json) : undefined;
+  const row = db.select()
+    .from(sessionMetrics)
+    .where(eq(sessionMetrics.sessionId, sessionId))
+    .get();
+    
+  return row ? JSON.parse(row.performanceJson) : undefined;
 }

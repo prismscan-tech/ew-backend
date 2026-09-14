@@ -17,6 +17,7 @@ import { MLWsEvent } from "../types/domain";
 import * as sessionRepo from "../db/sessionRepository";
 import { recordTelemetry } from "./sessionManager";
 import { enrichTelemetry } from "./telemetryEnricher";
+import { logger } from "../utils/logger";
 
 const frontendClients = new Set<WebSocket>();
 let upstreamSocket: WebSocket | null = null;
@@ -39,18 +40,15 @@ function connectToUpstream(): void {
   // record telemetry manually after stepSimulation() calls instead
   // (see routes/sessionsRoutes.ts step handler).
   if (mlClient.wsUrl.startsWith("ws://mock-ml-client-no-real-socket")) {
-    // eslint-disable-next-line no-console
-    console.warn("[wsRelay] Mock ML client active - skipping upstream WebSocket connection.");
+    logger.warn("[wsRelay] Mock ML client active - skipping upstream WebSocket connection.");
     return;
   }
 
-  // eslint-disable-next-line no-console
-  console.log(`[wsRelay] Connecting to upstream telemetry stream at ${mlClient.wsUrl}`);
+  logger.info(`[wsRelay] Connecting to upstream telemetry stream at ${mlClient.wsUrl}`);
   upstreamSocket = new WebSocket(mlClient.wsUrl);
 
   upstreamSocket.on("open", () => {
-    // eslint-disable-next-line no-console
-    console.log("[wsRelay] Connected to ML API telemetry stream.");
+    logger.info("[wsRelay] Connected to ML API telemetry stream.");
   });
 
   upstreamSocket.on("message", (data) => {
@@ -69,20 +67,17 @@ function connectToUpstream(): void {
         });
       }
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error("[wsRelay] Failed to parse upstream message:", err);
+      logger.error(err, "[wsRelay] Failed to parse upstream message:");
     }
   });
 
   upstreamSocket.on("close", () => {
-    // eslint-disable-next-line no-console
-    console.warn("[wsRelay] Upstream connection closed. Reconnecting in 3s...");
+    logger.warn("[wsRelay] Upstream connection closed. Reconnecting in 3s...");
     scheduleReconnect();
   });
 
   upstreamSocket.on("error", (err) => {
-    // eslint-disable-next-line no-console
-    console.error("[wsRelay] Upstream connection error:", err.message);
+    logger.error(err, "[wsRelay] Upstream connection error:");
   });
 }
 

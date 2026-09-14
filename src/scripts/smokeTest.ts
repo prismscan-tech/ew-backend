@@ -3,14 +3,11 @@
  * Run with: npx tsx src/scripts/smokeTest.ts
  */
 
-import { initSchema } from "../db/database";
 import * as sessionManager from "../services/sessionManager";
 import * as sessionRepo from "../db/sessionRepository";
 import { mlClient } from "../clients/mlClientProvider";
 
 async function main() {
-  initSchema();
-
   console.log("Starting session...");
   const session = await sessionManager.startSession("1_Seen_Structure", "hybrid_v4", 42);
   console.log("Session created:", session);
