@@ -9,6 +9,7 @@ const startSessionSchema = z.object({
   scenarioName: z.string().min(1),
   schedulerName: z.string().min(1),
   seed: z.number().int().optional(),
+  startPaused: z.boolean().optional(),
 });
 
 const stepSessionSchema = z.object({
@@ -28,7 +29,8 @@ export async function startSession(req: Request, res: Response): Promise<void> {
   const session = await sessionManager.startSession(
     parsed.scenarioName,
     parsed.schedulerName,
-    parsed.seed
+    parsed.seed,
+    parsed.startPaused
   );
   res.status(202).json(session);
 }

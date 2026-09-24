@@ -25,7 +25,8 @@ const SNAPSHOT_INTERVAL_STEPS = 5; // persist every Nth step, not every single o
 export async function startSession(
   scenarioName: string,
   schedulerName: string,
-  seed?: number
+  seed?: number,
+  startPaused: boolean = false
 ): Promise<Session> {
   const active = sessionRepo.getActiveSession();
   if (active) {
@@ -45,9 +46,13 @@ export async function startSession(
   });
 
   sessionRepo.createSession(sessionId, scenarioName, schedulerName, resolvedSeed);
-  sessionRepo.updateSessionStatus(sessionId, "running");
-
-  await mlClient.startSimulation();
+  
+  if (!startPaused) {
+    sessionRepo.updateSessionStatus(sessionId, "running");
+    await mlClient.startSimulation();
+  } else {
+    sessionRepo.updateSessionStatus(sessionId, "paused");
+  }
 
   const session = sessionRepo.getSession(sessionId)!;
   broadcastToAll({ type: "session_started", sessionId, payload: session });
