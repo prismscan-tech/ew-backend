@@ -22,4 +22,4 @@ jobs:
           docker build -t ew-backend .
           docker stop ew-backend || true
           docker rm ew-backend || true
-          docker run -d --name ew-backend --network host --restart unless-stopped --env-file .env ew-backend
+          docker run -d --name ew-backend --network host -v ~/ew-backend-data:/app/data --restart unless-stopped --env-file .env ew-backend
